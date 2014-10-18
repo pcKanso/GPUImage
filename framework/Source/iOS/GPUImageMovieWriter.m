@@ -270,7 +270,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 - (void)startRecording;
 {
     alreadyFinishedRecording = NO;
-    isRecording = YES;
     _paused = NO;
     startTime = kCMTimeInvalid;
     runSynchronouslyOnContextQueue(_movieWriterContext, ^{
@@ -370,13 +369,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
 - (void)processAudioBuffer:(CMSampleBufferRef)audioBuffer;
 {
-    if (!isRecording)
-    {
-        return;
-    }
-    
-//    if (_hasAudioTrack && CMTIME_IS_VALID(startTime))
-    if (_paused)
+    if (!isRecording || _paused)
     {
         return;
     }
@@ -450,8 +443,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             {
                 if (![assetWriterAudioInput appendSampleBuffer:audioBuffer])
                     NSLog(@"Problem appending audio buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, currentSampleTime)));
-                isRecording = NO;
-                _paused = NO;
+//                isRecording = NO;
+//                _paused = NO;
             }
             else
             {
@@ -489,7 +482,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         [assetWriterVideoInput requestMediaDataWhenReadyOnQueue:videoQueue usingBlock:^{
             if( _paused )
             {
-                //NSLog(@"video requestMediaDataWhenReadyOnQueue paused");
+                NSLog(@"video requestMediaDataWhenReadyOnQueue paused");
                 // if we don't sleep, we'll get called back almost immediately, chewing up CPU
                 usleep(10000);
                 return;
@@ -686,7 +679,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         if (CMTIME_IS_INVALID(pausingTimeDiff)) {
             pausingTimeDiff = kCMTimeZero;
         }
-        NSLog(@"==> pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
+//        NSLog(@"==> pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
     }
 }
 
@@ -805,7 +798,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             {
                 if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
                     NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-                isRecording = NO; // Not sure about this change
             }
             else
             {
