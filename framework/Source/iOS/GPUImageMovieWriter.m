@@ -148,7 +148,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 {
     [self destroyDataFBO];
 
-#if ( (__IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_6_0) || (!defined(__IPHONE_6_0)) )
+#if !OS_OBJECT_USE_OBJC
     if( audioQueue != NULL )
     {
         dispatch_release(audioQueue);
@@ -254,6 +254,19 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     [assetWriter addInput:assetWriterVideoInput];
 }
 
+- (void)setEncodingLiveVideo:(BOOL) value
+{
+    _encodingLiveVideo = value;
+    if (isRecording) {
+        NSAssert(NO, @"Can not change Encoding Live Video while recording");
+    }
+    else
+    {
+        assetWriterVideoInput.expectsMediaDataInRealTime = _encodingLiveVideo;
+        assetWriterAudioInput.expectsMediaDataInRealTime = _encodingLiveVideo;
+    }
+}
+
 - (void)startRecording;
 {
     alreadyFinishedRecording = NO;
@@ -266,6 +279,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             [assetWriter startWriting];
         }
     });
+    isRecording = YES;
 	//    [assetWriter startSessionAtSourceTime:kCMTimeZero];
 }
 
@@ -397,6 +411,29 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         }
 
         previousAudioTime = currentSampleTime;
+        
+        //if the consumer wants to do something with the audio samples before writing, let him.
+        if (self.audioProcessingCallback) {
+            //need to introspect into the opaque CMBlockBuffer structure to find its raw sample buffers.
+            CMBlockBufferRef buffer = CMSampleBufferGetDataBuffer(audioBuffer);
+            CMItemCount numSamplesInBuffer = CMSampleBufferGetNumSamples(audioBuffer);
+            AudioBufferList audioBufferList;
+            
+            CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(audioBuffer,
+                                                                    NULL,
+                                                                    &audioBufferList,
+                                                                    sizeof(audioBufferList),
+                                                                    NULL,
+                                                                    NULL,
+                                                                    kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+                                                                    &buffer
+                                                                    );
+            //passing a live pointer to the audio buffers, try to process them in-place or we might have syncing issues.
+            for (int bufferCount=0; bufferCount < audioBufferList.mNumberBuffers; bufferCount++) {
+                SInt16 *samples = (SInt16 *)audioBufferList.mBuffers[bufferCount].mData;
+                self.audioProcessingCallback(&samples, numSamplesInBuffer);
+            }
+        }
         
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
         void(^write)() = ^() {
@@ -873,7 +910,20 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         }
         else if (audioOutputSettings == nil)
         {
-            double preferredHardwareSampleRate = [[AVAudioSession sharedInstance] currentHardwareSampleRate];
+            AVAudioSession *sharedAudioSession = [AVAudioSession sharedInstance];
+            double preferredHardwareSampleRate;
+            
+            if ([sharedAudioSession respondsToSelector:@selector(sampleRate)])
+            {
+                preferredHardwareSampleRate = [sharedAudioSession sampleRate];
+            }
+            else
+            {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                preferredHardwareSampleRate = [[AVAudioSession sharedInstance] currentHardwareSampleRate];
+#pragma clang diagnostic pop
+            }
             
             AudioChannelLayout acl;
             bzero( &acl, sizeof(acl));
