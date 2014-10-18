@@ -28,7 +28,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     GPUImageFramebuffer *firstInputFramebuffer;
     
     CMTime startTime, previousFrameTime, previousAudioTime;
-    CMTime pausingTimeDiff, previousFrameTimeWhilePausing;
+//    CMTime pausingTimeDiff, previousFrameTimeWhilePausing;
+    CMTime pausedFrameTime, resumedFrameTime, adjustmentFrameTime;
     CMTime mostCurrentFrameTime;
 
     dispatch_queue_t audioQueue, videoQueue;
@@ -94,6 +95,12 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     _encodingLiveVideo = [[outputSettings objectForKey:@"EncodingLiveVideo"] isKindOfClass:[NSNumber class]] ? [[outputSettings objectForKey:@"EncodingLiveVideo"] boolValue] : YES;
     previousFrameTime = kCMTimeNegativeInfinity;
     previousAudioTime = kCMTimeNegativeInfinity;
+    
+    // added for pause feature
+    adjustmentFrameTime = kCMTimeZero;
+    pausedFrameTime = kCMTimeZero;
+    resumedFrameTime = kCMTimeZero;
+    
     inputRotation = kGPUImageNoRotation;
     
     _movieWriterContext = [[GPUImageContext alloc] init];
@@ -270,8 +277,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 - (void)startRecording;
 {
     alreadyFinishedRecording = NO;
-    _paused = NO;
+    isRecording = YES;
     startTime = kCMTimeInvalid;
+    _paused = NO;
     runSynchronouslyOnContextQueue(_movieWriterContext, ^{
         if (audioInputReadyCallback == NULL)
         {
@@ -403,6 +411,10 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             return;
         }
 
+        // Added for pause feature
+        CMTime actualFrameTime = CMTimeSubtract(currentSampleTime, adjustmentFrameTime);
+        CMSampleBufferSetOutputPresentationTimeStamp(audioBuffer, actualFrameTime);
+        
         previousAudioTime = currentSampleTime;
         
         //if the consumer wants to do something with the audio samples before writing, let him.
@@ -470,6 +482,45 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     }
 }
 
+- (void)setPaused:(BOOL)paused
+{
+    _paused = paused;
+    if (_encodingLiveVideo) {
+        CMTime timestamp = kCMTimeZero;
+        if (!CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime))
+        {
+            timestamp = previousFrameTime;
+        }
+        else if (!CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime))
+        {
+            timestamp = previousAudioTime;
+        }
+        else {
+            return;
+        }
+        
+        
+        if (paused) {
+            NSLog(@"PAUSING!");
+            pausedFrameTime = timestamp;
+        }
+        else {
+            NSLog(@"RESUMING!");
+            resumedFrameTime = timestamp;
+            adjustmentFrameTime = CMTimeAdd(CMTimeSubtract(resumedFrameTime, pausedFrameTime),
+                                            adjustmentFrameTime);
+            
+        }
+        
+        NSLog(@"PREVIOUS FRAME TIMESTAMP: %f. PAUSED TIME: %f:. RESUMED TIME: %f",
+              CMTimeGetSeconds(timestamp),
+              CMTimeGetSeconds(pausedFrameTime),
+              CMTimeGetSeconds(resumedFrameTime));
+        NSLog(@"adjustmentFrameTime: %f",
+              CMTimeGetSeconds(adjustmentFrameTime));
+    }
+}
+
 - (void)enableSynchronizationCallbacks;
 {
     if (videoInputReadyCallback != NULL)
@@ -482,7 +533,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         [assetWriterVideoInput requestMediaDataWhenReadyOnQueue:videoQueue usingBlock:^{
             if( _paused )
             {
-                NSLog(@"video requestMediaDataWhenReadyOnQueue paused");
+//                NSLog(@"video requestMediaDataWhenReadyOnQueue paused");
                 // if we don't sleep, we'll get called back almost immediately, chewing up CPU
                 usleep(10000);
                 return;
@@ -672,21 +723,21 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 #pragma mark -
 #pragma mark GPUImageInput protocol
 
-- (void)resetPauseTimes;
-{
-    if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing)) {
-        previousFrameTimeWhilePausing = mostCurrentFrameTime;
-        if (CMTIME_IS_INVALID(pausingTimeDiff)) {
-            pausingTimeDiff = kCMTimeZero;
-        }
-//        NSLog(@"==> pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
-    }
-}
+//- (void)resetPauseTimes;
+//{
+//    if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing)) {
+//        previousFrameTimeWhilePausing = mostCurrentFrameTime;
+//        if (CMTIME_IS_INVALID(pausingTimeDiff)) {
+//            pausingTimeDiff = kCMTimeZero;
+//        }
+////        NSLog(@"==> pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
+//    }
+//}
 
 - (void)newFrameReadyAtTime:(CMTime)frameTime atIndex:(NSInteger)textureIndex;
 {
     mostCurrentFrameTime = frameTime;
-    if (!isRecording)
+    if (!isRecording || _paused)
     {
         [firstInputFramebuffer unlock];
         return;
@@ -699,34 +750,34 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         [firstInputFramebuffer unlock];
     }
     
-    if (_paused)
-    {
-        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
-        {
-            if (CMTIME_IS_INVALID(pausingTimeDiff))
-            {
-                pausingTimeDiff = kCMTimeZero;
-            }
-            
-            previousFrameTimeWhilePausing = frameTime;
-        }
-        
-        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
-        previousFrameTimeWhilePausing = frameTime;
-//        NSLog(@"pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
-        return;
-    }
-    else
-    {
-        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
-        {
-            previousFrameTimeWhilePausing = kCMTimeInvalid;
-        }
-        if (CMTIME_IS_VALID(pausingTimeDiff))
-        {
-            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
-        }
-    }
+//    if (_paused)
+//    {
+//        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
+//        {
+//            if (CMTIME_IS_INVALID(pausingTimeDiff))
+//            {
+//                pausingTimeDiff = kCMTimeZero;
+//            }
+//            
+//            previousFrameTimeWhilePausing = frameTime;
+//        }
+//        
+//        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
+//        previousFrameTimeWhilePausing = frameTime;
+////        NSLog(@"pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
+//        return;
+//    }
+//    else
+//    {
+//        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
+//        {
+//            previousFrameTimeWhilePausing = kCMTimeInvalid;
+//        }
+//        if (CMTIME_IS_VALID(pausingTimeDiff))
+//        {
+//            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
+//        }
+//    }
 
     if (CMTIME_IS_INVALID(startTime))
     {
@@ -785,6 +836,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         }
         
         void(^write)() = ^() {
+            // added for pause feature
+            CMTime actualFrameTime = CMTimeSubtract(frameTime, adjustmentFrameTime);
+            
             while( ! assetWriterVideoInput.readyForMoreMediaData && ! _encodingLiveVideo && ! videoEncodingIsFinished ) {
                 NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.1];
                 //            NSLog(@"video waiting...");
@@ -792,12 +846,15 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             }
             if (!assetWriterVideoInput.readyForMoreMediaData)
             {
-                NSLog(@"2: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+//                NSLog(@"2: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+                NSLog(@"2: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, actualFrameTime)));
             }
             else if(self.assetWriter.status == AVAssetWriterStatusWriting)
             {
-                if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
-                    NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+//                if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
+//                    NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+                if(![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:actualFrameTime])
+                    NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, actualFrameTime)));
             }
             else
             {
@@ -961,14 +1018,29 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     assetWriter.metadata = metaData;
 }
 
+//- (CMTime)duration {
+//    if( ! CMTIME_IS_VALID(startTime) )
+//        return kCMTimeZero;
+////    if( ! CMTIME_IS_VALID(pausingTimeDiff) )
+////        return CMTimeSubtract(CMTimeSubtract(previousFrameTime, startTime), pausingTimeDiff);
+////        return CMTimeSubtract(previousFrameTime, startTime);
+//    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) )
+//        return CMTimeSubtract(previousFrameTime, startTime);
+//    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime) )
+//        return CMTimeSubtract(previousAudioTime, startTime);
+//    return kCMTimeZero;
+//}
+
 - (CMTime)duration {
     if( ! CMTIME_IS_VALID(startTime) )
         return kCMTimeZero;
-//    if( ! CMTIME_IS_VALID(pausingTimeDiff) )
-//        return CMTimeSubtract(CMTimeSubtract(previousFrameTime, startTime), pausingTimeDiff);
+    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) ) {
 //        return CMTimeSubtract(previousFrameTime, startTime);
-    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) )
-        return CMTimeSubtract(previousFrameTime, startTime);
+        CMTime currTime = CMTimeSubtract(previousFrameTime, startTime);
+        currTime = CMTimeSubtract(currTime, adjustmentFrameTime);
+//        currTime = CMTimeSubtract(startTime, adjustmentFrameTime);
+        return currTime;
+    }
     if( ! CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime) )
         return CMTimeSubtract(previousAudioTime, startTime);
     return kCMTimeZero;
