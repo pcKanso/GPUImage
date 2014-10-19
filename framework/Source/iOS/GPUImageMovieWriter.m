@@ -270,6 +270,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 {
     alreadyFinishedRecording = NO;
     _paused = NO;
+    pausingTimeDiff = kCMTimeZero;
     startTime = kCMTimeInvalid;
     runSynchronouslyOnContextQueue(_movieWriterContext, ^{
         if (audioInputReadyCallback == NULL)
@@ -694,34 +695,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         return;
     }
     
-    if (_paused)
-    {
-        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
-        {
-            if (CMTIME_IS_INVALID(pausingTimeDiff))
-            {
-                pausingTimeDiff = kCMTimeZero;
-            }
-            
-            previousFrameTimeWhilePausing = frameTime;
-        }
-        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
-        previousFrameTimeWhilePausing = frameTime;
-        [firstInputFramebuffer unlock];
-        return;
-    }
-    else
-    {
-        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
-        {
-            previousFrameTimeWhilePausing = kCMTimeInvalid;
-        }
-        if (CMTIME_IS_VALID(pausingTimeDiff))
-        {
-            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
-        }
-    }
-    
 //    if (_paused)
 //    {
 //        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
@@ -732,11 +705,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 //            }
 //            
 //            previousFrameTimeWhilePausing = frameTime;
-//            NSLog(@"pausingTimeDiff: %f; previousFrameTimeWhilePausing, %f",
-//                  CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
 //        }
-//        //        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
-//        //        previousFrameTimeWhilePausing = frameTime;
+//        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
+//        previousFrameTimeWhilePausing = frameTime;
 //        [firstInputFramebuffer unlock];
 //        return;
 //    }
@@ -744,16 +715,44 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 //    {
 //        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
 //        {
-//            pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
 //            previousFrameTimeWhilePausing = kCMTimeInvalid;
-//            NSLog(@"pausingTimeDiff: %f; previousFrameTimeWhilePausing, %f",
-//                  CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
 //        }
 //        if (CMTIME_IS_VALID(pausingTimeDiff))
 //        {
 //            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
 //        }
 //    }
+    
+    if (_paused)
+    {
+        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
+        {
+            if (CMTIME_IS_INVALID(pausingTimeDiff))
+            {
+                pausingTimeDiff = kCMTimeZero;
+            }
+            
+            previousFrameTimeWhilePausing = frameTime;
+//            NSLog(@"pausingTimeDiff: %f; previousFrameTimeWhilePausing, %f",
+//                  CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
+        }
+        [firstInputFramebuffer unlock];
+        return;
+    }
+    else
+    {
+        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
+        {
+            pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
+            previousFrameTimeWhilePausing = kCMTimeInvalid;
+//            NSLog(@"pausingTimeDiff: %f; previousFrameTimeWhilePausing, %f",
+//                  CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
+        }
+        if (CMTIME_IS_VALID(pausingTimeDiff))
+        {
+            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
+        }
+    }
     
     
     if (CMTIME_IS_INVALID(startTime))
