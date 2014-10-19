@@ -30,7 +30,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     CMTime startTime, previousFrameTime, previousAudioTime;
 //    CMTime pausingTimeDiff, previousFrameTimeWhilePausing;
     CMTime pausedFrameTime, resumedFrameTime, adjustmentFrameTime;
-    CMTime mostCurrentFrameTime;
+    CMTime pausedAmountTime;
+    BOOL resumedRecording;
 
     dispatch_queue_t audioQueue, videoQueue;
     BOOL audioEncodingIsFinished, videoEncodingIsFinished;
@@ -276,6 +277,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
 - (void)startRecording;
 {
+    pausedAmountTime = kCMTimeZero;
+    resumedRecording = NO;
     alreadyFinishedRecording = NO;
     isRecording = YES;
     startTime = kCMTimeInvalid;
@@ -496,6 +499,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             timestamp = previousAudioTime;
         }
         else {
+            NSLog(@"return!");
             return;
         }
         
@@ -505,6 +509,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             pausedFrameTime = timestamp;
         }
         else {
+            resumedRecording = YES;
             NSLog(@"RESUMING!");
             resumedFrameTime = timestamp;
             adjustmentFrameTime = CMTimeAdd(CMTimeSubtract(resumedFrameTime, pausedFrameTime),
@@ -723,26 +728,20 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 #pragma mark -
 #pragma mark GPUImageInput protocol
 
-//- (void)resetPauseTimes;
-//{
-//    if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing)) {
-//        previousFrameTimeWhilePausing = mostCurrentFrameTime;
-//        if (CMTIME_IS_INVALID(pausingTimeDiff)) {
-//            pausingTimeDiff = kCMTimeZero;
-//        }
-////        NSLog(@"==> pausingTimeDiff = %f, previousFrameTimeWhilePausing = %f", CMTimeGetSeconds(pausingTimeDiff), CMTimeGetSeconds(previousFrameTimeWhilePausing));
-//    }
-//}
-
 - (void)newFrameReadyAtTime:(CMTime)frameTime atIndex:(NSInteger)textureIndex;
 {
-    mostCurrentFrameTime = frameTime;
     if (!isRecording || _paused)
     {
         [firstInputFramebuffer unlock];
         return;
     }
 
+    if (resumedRecording) {
+        // this calculate the running total of amount of time in paused state
+        // which is used to determine total recording time
+        pausedAmountTime = CMTimeAdd(pausedAmountTime, CMTimeSubtract(frameTime, pausedFrameTime));
+        resumedRecording = NO;
+    }
     // Drop frames forced by images and other things with no time constants
     // Also, if two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case
     if ( (CMTIME_IS_INVALID(frameTime)) || (CMTIME_COMPARE_INLINE(frameTime, ==, previousFrameTime)) || (CMTIME_IS_INDEFINITE(frameTime)) ) 
@@ -782,10 +781,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     if (CMTIME_IS_INVALID(startTime))
     {
         runSynchronouslyOnContextQueue(_movieWriterContext, ^{
-//            if (CMTIME_IS_VALID(startTime))
-//            {
-//                return ;
-//            }
             if ((videoInputReadyCallback == NULL) && (assetWriter.status != AVAssetWriterStatusWriting))
             {
                 [assetWriter startWriting];
@@ -1018,27 +1013,21 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     assetWriter.metadata = metaData;
 }
 
-//- (CMTime)duration {
-//    if( ! CMTIME_IS_VALID(startTime) )
-//        return kCMTimeZero;
-////    if( ! CMTIME_IS_VALID(pausingTimeDiff) )
-////        return CMTimeSubtract(CMTimeSubtract(previousFrameTime, startTime), pausingTimeDiff);
-////        return CMTimeSubtract(previousFrameTime, startTime);
-//    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) )
-//        return CMTimeSubtract(previousFrameTime, startTime);
-//    if( ! CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime) )
-//        return CMTimeSubtract(previousAudioTime, startTime);
-//    return kCMTimeZero;
-//}
-
 - (CMTime)duration {
     if( ! CMTIME_IS_VALID(startTime) )
         return kCMTimeZero;
     if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) ) {
 //        return CMTimeSubtract(previousFrameTime, startTime);
+        
+//        NSLog(@"previousFrameTime: %f; startTime: %f; resumedFrameTime: %f; pausedFrameTime: %f; pausedAmountTime: %f",
+//              CMTimeGetSeconds(previousFrameTime),
+//              CMTimeGetSeconds(startTime),
+//              CMTimeGetSeconds(resumedFrameTime),
+//              CMTimeGetSeconds(pausedFrameTime),
+//              CMTimeGetSeconds(pausedAmountTime));
+
         CMTime currTime = CMTimeSubtract(previousFrameTime, startTime);
-        currTime = CMTimeSubtract(currTime, adjustmentFrameTime);
-//        currTime = CMTimeSubtract(startTime, adjustmentFrameTime);
+        currTime = CMTimeSubtract(currTime, pausedAmountTime);
         return currTime;
     }
     if( ! CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime) )
