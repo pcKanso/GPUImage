@@ -401,6 +401,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
         // Added for pause feature
         CMTime actualFrameTime = CMTimeSubtract(currentSampleTime, adjustmentFrameTime);
+//        CMTime actualFrameTime = CMTimeSubtract(currentSampleTime, pausedAmountTime);
         CMSampleBufferSetOutputPresentationTimeStamp(audioBuffer, actualFrameTime);
         
         previousAudioTime = currentSampleTime;
@@ -730,6 +731,11 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         return;
     }
 
+//    if (CMTIME_IS_VALID(pausedAmountTime))
+//    {
+//        frameTime = CMTimeSubtract(frameTime, pausedAmountTime);
+//    }
+    
     if (CMTIME_IS_INVALID(startTime))
     {
         runSynchronouslyOnContextQueue(_movieWriterContext, ^{
@@ -785,6 +791,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         void(^write)() = ^() {
             // added for pause feature
             CMTime actualFrameTime = CMTimeSubtract(frameTime, adjustmentFrameTime);
+//            CMTime actualFrameTime = CMTimeSubtract(frameTime, pausedAmountTime);
+//            actualFrameTime = CMTimeSubtract(actualFrameTime, pausedAmountTime);
             
             while( ! assetWriterVideoInput.readyForMoreMediaData && ! _encodingLiveVideo && ! videoEncodingIsFinished ) {
                 NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.1];
@@ -802,6 +810,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             }
             else
             {
+                NSLog(@"self.assetWriter.status: %@", self.assetWriter.error);
                 NSLog(@"Couldn't write a frame");
                 //NSLog(@"Wrote a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
             }
