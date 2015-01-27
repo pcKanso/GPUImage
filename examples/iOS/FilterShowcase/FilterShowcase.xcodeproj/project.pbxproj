@@ -246,7 +246,7 @@
 			isa = PBXProject;
 			attributes = {
 				CLASSPREFIX = Showcase;
-				LastUpgradeCheck = 0600;
+				LastUpgradeCheck = 0610;
 				ORGANIZATIONNAME = "Cell Phone";
 				TargetAttributes = {
 					BC982B0114F046AC0001FF6F = {
