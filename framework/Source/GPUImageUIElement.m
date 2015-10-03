@@ -107,14 +107,28 @@
     
     free(imageData);
     
-    for (id<GPUImageInput> currentTarget in targets)
+	for (id<GPUImageInput> currentTarget in targets)
+	{
+		if (currentTarget != self.targetToIgnoreForUpdates)
+		{
+			NSInteger indexOfObject = [targets indexOfObject:currentTarget];
+			NSInteger textureIndexOfTarget = [[targetTextureIndices objectAtIndex:indexOfObject] integerValue];
+			
+			[currentTarget setInputSize:layerPixelSize atIndex:textureIndexOfTarget];
+			[currentTarget setInputFramebuffer:outputFramebuffer atIndex:textureIndexOfTarget];
+		}
+	}
+	
+	[outputFramebuffer unlock];
+
+	for (id<GPUImageInput> currentTarget in targets)
     {
         if (currentTarget != self.targetToIgnoreForUpdates)
         {
             NSInteger indexOfObject = [targets indexOfObject:currentTarget];
             NSInteger textureIndexOfTarget = [[targetTextureIndices objectAtIndex:indexOfObject] integerValue];
             
-            [currentTarget setInputSize:layerPixelSize atIndex:textureIndexOfTarget];
+//            [currentTarget setInputSize:layerPixelSize atIndex:textureIndexOfTarget];
             [currentTarget newFrameReadyAtTime:frameTime atIndex:textureIndexOfTarget];
         }
     }    

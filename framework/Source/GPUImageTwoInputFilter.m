@@ -143,19 +143,27 @@ NSString *const kGPUImageTwoInputTextureVertexShaderString = SHADER_STRING
     }
 }
 
-- (void)setInputFramebuffer:(GPUImageFramebuffer *)newInputFramebuffer atIndex:(NSInteger)textureIndex;
+-(void)setInputFramebuffer:(GPUImageFramebuffer *)newInputFramebuffer atIndex:(NSInteger)textureIndex;
 {
-    if (textureIndex == 0)
-    {
-        firstInputFramebuffer = newInputFramebuffer;
-        hasSetFirstTexture = YES;
-        [firstInputFramebuffer lock];
-    }
-    else
-    {
-        secondInputFramebuffer = newInputFramebuffer;
-        [secondInputFramebuffer lock];
-    }
+	if (textureIndex == 0)
+	{
+		if (hasSetFirstFrameBuffer) {
+			[firstInputFramebuffer unlock];
+		}
+		firstInputFramebuffer = newInputFramebuffer;
+		hasSetFirstTexture = YES;
+		hasSetFirstFrameBuffer = YES;
+		[firstInputFramebuffer lock];
+	}
+	else
+	{
+		if (hasSetSecondFrameBuffer) {
+			[secondInputFramebuffer unlock];
+		}
+		secondInputFramebuffer = newInputFramebuffer;
+		[secondInputFramebuffer lock];
+		hasSetSecondFrameBuffer = YES;
+	}
 }
 
 - (void)setInputSize:(CGSize)newSize atIndex:(NSInteger)textureIndex;
@@ -251,14 +259,15 @@ NSString *const kGPUImageTwoInputTextureVertexShaderString = SHADER_STRING
         }
     }
 
-    // || (hasReceivedFirstFrame && secondFrameCheckDisabled) || (hasReceivedSecondFrame && firstFrameCheckDisabled)
-    if ((hasReceivedFirstFrame && hasReceivedSecondFrame) || updatedMovieFrameOppositeStillImage)
-    {
-        CMTime passOnFrameTime = (!CMTIME_IS_INDEFINITE(firstFrameTime)) ? firstFrameTime : secondFrameTime;
-        [super newFrameReadyAtTime:passOnFrameTime atIndex:0]; // Bugfix when trying to record: always use time from first input (unless indefinite, in which case use the second input)
-        hasReceivedFirstFrame = NO;
-        hasReceivedSecondFrame = NO;
-    }
+    // || (hasReceivedFirstFrame && secondFrameCheckDisabled) || (hasReceivedSecondFrame && firstFrameCheckDisabled)	if ((hasReceivedFirstFrame && hasReceivedSecondFrame) || updatedMovieFrameOppositeStillImage)
+	{
+		CMTime passOnFrameTime = (!CMTIME_IS_INDEFINITE(firstFrameTime)) ? firstFrameTime : secondFrameTime;
+		[super newFrameReadyAtTime:passOnFrameTime atIndex:0]; // Bugfix when trying to record: always use time from first input (unless indefinite, in which case use the second input)
+		hasReceivedFirstFrame = NO;
+		hasReceivedSecondFrame = NO;
+		hasSetFirstFrameBuffer = NO;
+		hasSetSecondFrameBuffer = NO;
+	}
 }
 
 @end
