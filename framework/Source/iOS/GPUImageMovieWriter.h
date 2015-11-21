@@ -18,11 +18,11 @@ extern NSString *const kGPUImageColorSwizzlingFragmentShaderString;
     
     NSURL *movieURL;
     NSString *fileType;
-	AVAssetWriter *assetWriter;
-	AVAssetWriterInput *assetWriterAudioInput;
-	AVAssetWriterInput *assetWriterVideoInput;
-    AVAssetWriterInputPixelBufferAdaptor *assetWriterPixelBufferInput;
-    
+//	AVAssetWriter *assetWriter;
+//	AVAssetWriterInput *assetWriterAudioInput;
+//	AVAssetWriterInput *assetWriterVideoInput;
+//    AVAssetWriterInputPixelBufferAdaptor *assetWriterPixelBufferInput;
+	
     GPUImageContext *_movieWriterContext;
     CVPixelBufferRef renderTarget;
     CVOpenGLESTextureRef renderTexture;
@@ -42,12 +42,18 @@ extern NSString *const kGPUImageColorSwizzlingFragmentShaderString;
 @property(nonatomic, copy) BOOL(^audioInputReadyCallback)(void);
 @property(nonatomic, copy) void(^audioProcessingCallback)(SInt16 **samplesRef, CMItemCount numSamplesInBuffer);
 @property(nonatomic) BOOL enabled;
-@property(nonatomic, readonly) AVAssetWriter *assetWriter;
+//@property(nonatomic, readonly) AVAssetWriter *assetWriter;
 @property(nonatomic, readonly) CMTime duration;
 @property(nonatomic, assign) CGAffineTransform transform;
 @property(nonatomic, copy) NSArray *metaData;
 @property(nonatomic, assign, getter = isPaused) BOOL paused;
 @property(nonatomic, retain) GPUImageContext *movieWriterContext;
+
+// Made properties
+@property(nonatomic, retain) AVAssetWriter *assetWriter;
+@property(nonatomic, retain) AVAssetWriterInput *assetWriterAudioInput;
+@property(nonatomic, retain) AVAssetWriterInput *assetWriterVideoInput;
+@property(nonatomic, retain) AVAssetWriterInputPixelBufferAdaptor *assetWriterPixelBufferInput;
 
 // Initialization and teardown
 - (id)initWithMovieURL:(NSURL *)newMovieURL size:(CGSize)newSize;

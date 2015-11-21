@@ -62,6 +62,12 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 @synthesize paused = _paused;
 @synthesize movieWriterContext = _movieWriterContext;
 
+// changed to properties
+@synthesize assetWriter;
+@synthesize assetWriterAudioInput;
+@synthesize assetWriterVideoInput;
+@synthesize assetWriterPixelBufferInput;
+
 @synthesize delegate = _delegate;
 
 #pragma mark -
