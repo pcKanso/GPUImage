@@ -694,35 +694,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         [firstInputFramebuffer unlock];
         return;
     }
-    
-//    if (_paused)
-//    {
-//        if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
-//        {
-//            if (CMTIME_IS_INVALID(pausingTimeDiff))
-//            {
-//                pausingTimeDiff = kCMTimeZero;
-//            }
-//            
-//            previousFrameTimeWhilePausing = frameTime;
-//        }
-//        pausingTimeDiff = CMTimeAdd(pausingTimeDiff, CMTimeSubtract(frameTime, previousFrameTimeWhilePausing));
-//        previousFrameTimeWhilePausing = frameTime;
-//        [firstInputFramebuffer unlock];
-//        return;
-//    }
-//    else
-//    {
-//        if (CMTIME_IS_VALID(previousFrameTimeWhilePausing))
-//        {
-//            previousFrameTimeWhilePausing = kCMTimeInvalid;
-//        }
-//        if (CMTIME_IS_VALID(pausingTimeDiff))
-//        {
-//            frameTime = CMTimeSubtract(frameTime, pausingTimeDiff);
-//        }
-//    }
-    
+
     if (_paused)
     {
         if (CMTIME_IS_INVALID(previousFrameTimeWhilePausing))
@@ -989,8 +961,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 - (CMTime)duration {
     if( ! CMTIME_IS_VALID(startTime) )
         return kCMTimeZero;
-//    if( ! CMTIME_IS_VALID(pausingTimeDiff) )
-//        return CMTimeSubtract(CMTimeSubtract(previousFrameTime, startTime), pausingTimeDiff);
     if( ! CMTIME_IS_NEGATIVE_INFINITY(previousFrameTime) )
         return CMTimeSubtract(previousFrameTime, startTime);
     if( ! CMTIME_IS_NEGATIVE_INFINITY(previousAudioTime) )
