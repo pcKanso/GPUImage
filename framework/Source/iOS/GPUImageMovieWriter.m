@@ -473,7 +473,13 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 				if (![assetWriterAudioInput appendSampleBuffer:audioBuffer])
 				{
                     NSLog(@"Problem appending audio buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, currentSampleTime)));
-//					NSLog(@"movieRecordingFailedWithError: %@", assetWriter.error.description);
+					if (assetWriter.status == AVAssetWriterStatusFailed) {
+						isRecording = NO;
+						if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
+						{
+							[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+						}
+					}
 				}
             }
             else
@@ -807,10 +813,12 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             {
 				if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime]) {
 					NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-					isRecording = NO;
-					if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
-					{
-						[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+					if (assetWriter.status == AVAssetWriterStatusFailed) {
+						isRecording = NO;
+						if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
+						{
+							[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+						}
 					}
 				}
             }
