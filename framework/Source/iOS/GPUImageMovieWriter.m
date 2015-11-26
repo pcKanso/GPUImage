@@ -403,34 +403,34 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             CFRelease(audioBuffer);
             return;
         }
-        
-        if (discont) {
-            discont = NO;
-            
-            CMTime current;
-            if (offsetTime.value > 0) {
-                current = CMTimeSubtract(currentSampleTime, offsetTime);
-            } else {
-                current = currentSampleTime;
-            }
-            
-            CMTime offset = CMTimeSubtract(current, previousAudioTime);
-            
-            if (offsetTime.value == 0) {
-                offsetTime = offset;
-            } else {
-                offsetTime = CMTimeAdd(offsetTime, offset);
-            }
-        }
-        
-        if (offsetTime.value > 0) {
-            CFRelease(audioBuffer);
-            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
-            CFRetain(audioBuffer);
-        }
-        
-        // record most recent time so we know the length of the pause
-        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+
+//        if (discont) {
+//            discont = NO;
+//            
+//            CMTime current;
+//            if (offsetTime.value > 0) {
+//                current = CMTimeSubtract(currentSampleTime, offsetTime);
+//            } else {
+//                current = currentSampleTime;
+//            }
+//            
+//            CMTime offset = CMTimeSubtract(current, previousAudioTime);
+//            
+//            if (offsetTime.value == 0) {
+//                offsetTime = offset;
+//            } else {
+//                offsetTime = CMTimeAdd(offsetTime, offset);
+//            }
+//        }
+//        
+//        if (offsetTime.value > 0) {
+//            CFRelease(audioBuffer);
+//            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
+//            CFRetain(audioBuffer);
+//        }
+//        
+//        // record most recent time so we know the length of the pause
+//        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
 
         previousAudioTime = currentSampleTime;
         
