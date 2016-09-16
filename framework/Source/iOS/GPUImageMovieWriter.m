@@ -30,7 +30,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     BOOL discont;
     CMTime startTime, previousFrameTime, previousAudioTime;
     CMTime offsetTime;
-
+    
     dispatch_queue_t audioQueue, videoQueue;
     BOOL audioEncodingIsFinished, videoEncodingIsFinished;
 
@@ -202,9 +202,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     // custom output settings specified
     else 
     {
-		NSString *videoCodec = [outputSettings objectForKey:AVVideoCodecKey];
-		NSNumber *width = [outputSettings objectForKey:AVVideoWidthKey];
-		NSNumber *height = [outputSettings objectForKey:AVVideoHeightKey];
+		__unused NSString *videoCodec = [outputSettings objectForKey:AVVideoCodecKey];
+		__unused NSNumber *width = [outputSettings objectForKey:AVVideoWidthKey];
+		__unused NSNumber *height = [outputSettings objectForKey:AVVideoHeightKey];
 		
 		NSAssert(videoCodec && width && height, @"OutputSettings is missing required parameters.");
         
@@ -403,34 +403,35 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             CFRelease(audioBuffer);
             return;
         }
+        
+        if (discont) {
+			NSLog(@"processAudioBuffer: discont = NO");
+            discont = NO;
+            
+            CMTime current;
+            if (offsetTime.value > 0) {
+                current = CMTimeSubtract(currentSampleTime, offsetTime);
+            } else {
+                current = currentSampleTime;
+            }
+            
+            CMTime offset = CMTimeSubtract(current, previousAudioTime);
+            
+            if (offsetTime.value == 0) {
+                offsetTime = offset;
+            } else {
+                offsetTime = CMTimeAdd(offsetTime, offset);
+            }
+        }
 
-//        if (discont) {
-//            discont = NO;
-//            
-//            CMTime current;
-//            if (offsetTime.value > 0) {
-//                current = CMTimeSubtract(currentSampleTime, offsetTime);
-//            } else {
-//                current = currentSampleTime;
-//            }
-//            
-//            CMTime offset = CMTimeSubtract(current, previousAudioTime);
-//            
-//            if (offsetTime.value == 0) {
-//                offsetTime = offset;
-//            } else {
-//                offsetTime = CMTimeAdd(offsetTime, offset);
-//            }
-//        }
-//        
-//        if (offsetTime.value > 0) {
-//            CFRelease(audioBuffer);
-//            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
-//            CFRetain(audioBuffer);
-//        }
-//        
-//        // record most recent time so we know the length of the pause
-//        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+		if (offsetTime.value > 0) {
+			CFRelease(audioBuffer);
+			audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
+//            CFRetain(audioBuffer); // causes problem with no sound.
+        }
+		
+        // record most recent time so we know the length of the pause
+        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
 
         previousAudioTime = currentSampleTime;
         
@@ -455,6 +456,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
                 SInt16 *samples = (SInt16 *)audioBufferList.mBuffers[bufferCount].mData;
                 self.audioProcessingCallback(&samples, numSamplesInBuffer);
             }
+			CFRelease(buffer); // Fixed leak caused from not releasing block buffer #2347
         }
         
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
@@ -504,6 +506,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             write();
         }
     }
+	else {
+		NSLog(@"No audio track");
+	}
 }
 
 - (void)enableSynchronizationCallbacks;
@@ -514,7 +519,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         {
             [assetWriter startWriting];
         }
-        videoQueue = dispatch_queue_create("com.sunsetlakesoftware.GPUImage.videoReadingQueue", NULL);
+        videoQueue = dispatch_queue_create("com.sunsetlakesoftware.GPUImage.videoReadingQueue", GPUImageDefaultQueueAttribute());
         [assetWriterVideoInput requestMediaDataWhenReadyOnQueue:videoQueue usingBlock:^{
             if( _paused )
             {
@@ -543,7 +548,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     
     if (audioInputReadyCallback != NULL)
     {
-        audioQueue = dispatch_queue_create("com.sunsetlakesoftware.GPUImage.audioReadingQueue", NULL);
+        audioQueue = dispatch_queue_create("com.sunsetlakesoftware.GPUImage.audioReadingQueue", GPUImageDefaultQueueAttribute());
         [assetWriterAudioInput requestMediaDataWhenReadyOnQueue:audioQueue usingBlock:^{
             if( _paused )
             {
@@ -623,7 +628,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     }
     
 	
-	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	__unused GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     
     NSAssert(status == GL_FRAMEBUFFER_COMPLETE, @"Incomplete filter FBO: %d", status);
 }
@@ -734,7 +739,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             offsetTime = CMTimeAdd(offsetTime, offset);
         }
     }
-    
+	
     if (offsetTime.value > 0) {
         frameTime = CMTimeSubtract(frameTime, offsetTime);
     }
@@ -776,6 +781,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         [self renderAtInternalSizeUsingFramebuffer:inputFramebufferForBlock];
         
         CVPixelBufferRef pixel_buffer = NULL;
+        
         if ([GPUImageContext supportsFastTextureUpload])
         {
             pixel_buffer = renderTarget;
@@ -1016,21 +1022,22 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     }
 }
 
-- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef) sample by:(CMTime) offset {
-    CMItemCount count;
+- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef)sample by:(CMTime)offset
+{
+	CMItemCount count;
     CMSampleBufferGetSampleTimingInfoArray(sample, 0, nil, &count);
     CMSampleTimingInfo* pInfo = malloc(sizeof(CMSampleTimingInfo) * count);
     CMSampleBufferGetSampleTimingInfoArray(sample, count, pInfo, &count);
-    
-    for (CMItemCount i = 0; i < count; i++) {
-        pInfo[i].decodeTimeStamp = CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
-        pInfo[i].presentationTimeStamp = CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
-    }
-    
-    CMSampleBufferRef sout;
-    CMSampleBufferCreateCopyWithNewTiming(nil, sample, count, pInfo, &sout);
+	
+	for (CMItemCount i = 0; i < count; i++) {
+		pInfo[i].decodeTimeStamp = CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
+		pInfo[i].presentationTimeStamp = CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
+	}
+
+	CMSampleBufferRef sout;
+    CMSampleBufferCreateCopyWithNewTiming(kCFAllocatorDefault, sample, count, pInfo, &sout);
     free(pInfo);
-    
+	
     return sout;
 }
 

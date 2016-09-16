@@ -266,11 +266,6 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size);
         return;
     }
 
-    if (framebufferReferenceCount < 1)
-    {
-        [[GPUImageContext sharedFramebufferCache] returnFramebufferToCache:self];
-        return;
-    }
     NSAssert(framebufferReferenceCount > 0, @"Tried to overrelease a framebuffer, did you forget to call -useNextFrameForImageCapture before using -imageFromCurrentFramebuffer?");
     framebufferReferenceCount--;
     if (framebufferReferenceCount < 1)
@@ -439,6 +434,15 @@ void dataProviderUnlockCallback (void *info, const void *data, size_t size)
     GLubyte * bufferBytes = CVPixelBufferGetBaseAddress(renderTarget);
     [self unlockAfterReading];
     return bufferBytes;
+#else
+    return NULL; // TODO: do more with this on the non-texture-cache side
+#endif
+}
+
+- (CVPixelBufferRef )pixelBuffer;
+{
+#if TARGET_IPHONE_SIMULATOR || TARGET_OS_IPHONE
+    return renderTarget;
 #else
     return NULL; // TODO: do more with this on the non-texture-cache side
 #endif
