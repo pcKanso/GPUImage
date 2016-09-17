@@ -404,34 +404,42 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             return;
         }
 
-//        if (discont) {
-//            discont = NO;
-//            
-//            CMTime current;
-//            if (offsetTime.value > 0) {
-//                current = CMTimeSubtract(currentSampleTime, offsetTime);
-//            } else {
-//                current = currentSampleTime;
-//            }
-//            
-//            CMTime offset = CMTimeSubtract(current, previousAudioTime);
-//            
-//            if (offsetTime.value == 0) {
-//                offsetTime = offset;
-//            } else {
-//                offsetTime = CMTimeAdd(offsetTime, offset);
-//            }
-//        }
-//        
-//        if (offsetTime.value > 0) {
-//            CFRelease(audioBuffer);
-//            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
-//            CFRetain(audioBuffer);
-//        }
-//        
-//        // record most recent time so we know the length of the pause
-//        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+        if (discont)
+		{
+//			NSLog(@"processAudioBuffer --> discont");
+//			CFRelease(audioBuffer);
+//			return;
 
+			discont = NO;
+            
+            CMTime current;
+            if (offsetTime.value > 0) {
+                current = CMTimeSubtract(currentSampleTime, offsetTime);
+            } else {
+                current = currentSampleTime;
+            }
+            
+            CMTime offset = CMTimeSubtract(current, previousAudioTime);
+            
+            if (offsetTime.value == 0) {
+                offsetTime = offset;
+            } else {
+                offsetTime = CMTimeAdd(offsetTime, offset);
+            }
+        }
+        
+        if (offsetTime.value > 0)
+		{
+//			NSLog(@"offsetTime = %f", CMTimeGetSeconds(offsetTime));
+			
+            CFRelease(audioBuffer);
+            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
+//            CFRetain(audioBuffer);
+
+			// record most recent time so we know the length of the pause
+			currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+		}
+		
         previousAudioTime = currentSampleTime;
         
         //if the consumer wants to do something with the audio samples before writing, let him.
@@ -455,6 +463,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
                 SInt16 *samples = (SInt16 *)audioBufferList.mBuffers[bufferCount].mData;
                 self.audioProcessingCallback(&samples, numSamplesInBuffer);
             }
+			CFRelease(buffer);
         }
         
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
