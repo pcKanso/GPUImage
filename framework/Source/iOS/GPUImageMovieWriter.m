@@ -406,26 +406,26 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
         if (discont)
 		{
-//			NSLog(@"processAudioBuffer --> discont");
-//			CFRelease(audioBuffer);
-//			return;
+			NSLog(@"processAudioBuffer --> discont");
+			CFRelease(audioBuffer);
+			return;
 
-			discont = NO;
-            
-            CMTime current;
-            if (offsetTime.value > 0) {
-                current = CMTimeSubtract(currentSampleTime, offsetTime);
-            } else {
-                current = currentSampleTime;
-            }
-            
-            CMTime offset = CMTimeSubtract(current, previousAudioTime);
-            
-            if (offsetTime.value == 0) {
-                offsetTime = offset;
-            } else {
-                offsetTime = CMTimeAdd(offsetTime, offset);
-            }
+//			discont = NO;
+//            
+//            CMTime current;
+//            if (offsetTime.value > 0) {
+//                current = CMTimeSubtract(currentSampleTime, offsetTime);
+//            } else {
+//                current = currentSampleTime;
+//            }
+//            
+//            CMTime offset = CMTimeSubtract(current, previousAudioTime);
+//            
+//            if (offsetTime.value == 0) {
+//                offsetTime = offset;
+//            } else {
+//                offsetTime = CMTimeAdd(offsetTime, offset);
+//            }
         }
         
         if (offsetTime.value > 0)
