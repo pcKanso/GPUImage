@@ -959,35 +959,38 @@ NSString *const kGPUImageYUVVideoRangeConversionForLAFragmentShaderString = SHAD
 
 - (void)captureOutput:(AVCaptureOutput *)captureOutput didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection
 {
-    if (!self.captureSession.isRunning)
-    {
-        return;
-    }
-    else if (captureOutput == audioOutput)
-    {
-        [self processAudioSampleBuffer:sampleBuffer];
-    }
-    else
-    {
-        if (dispatch_semaphore_wait(frameRenderingSemaphore, DISPATCH_TIME_NOW) != 0)
-        {
-            return;
-        }
-        
-        CFRetain(sampleBuffer);
-        runAsynchronouslyOnVideoProcessingQueue(^{
-            //Feature Detection Hook.
-            if (self.delegate)
-            {
-                [self.delegate willOutputSampleBuffer:sampleBuffer];
-            }
-            
-            [self processVideoSampleBuffer:sampleBuffer];
-            
-            CFRelease(sampleBuffer);
-            dispatch_semaphore_signal(frameRenderingSemaphore);
-        });
-    }
+	@synchronized(self)
+	{
+		if (!self.captureSession.isRunning)
+		{
+			return;
+		}
+		else if (captureOutput == audioOutput)
+		{
+			[self processAudioSampleBuffer:sampleBuffer];
+		}
+		else
+		{
+			if (dispatch_semaphore_wait(frameRenderingSemaphore, DISPATCH_TIME_NOW) != 0)
+			{
+				return;
+			}
+			
+			CFRetain(sampleBuffer);
+			runAsynchronouslyOnVideoProcessingQueue(^{
+				//Feature Detection Hook.
+				if (self.delegate)
+				{
+					[self.delegate willOutputSampleBuffer:sampleBuffer];
+				}
+				
+				[self processVideoSampleBuffer:sampleBuffer];
+				
+				CFRelease(sampleBuffer);
+				dispatch_semaphore_signal(frameRenderingSemaphore);
+			});
+		}
+	}
 }
 
 #pragma mark -
