@@ -279,6 +279,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     });
     isRecording = YES;
 	//    [assetWriter startSessionAtSourceTime:kCMTimeZero];
+	allowWriteVideo = NO;
 }
 
 - (void)startRecordingInOrientation:(CGAffineTransform)orientationTransform;
@@ -367,6 +368,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     });
 }
 
+// Attempt at fix for crashing
+static BOOL allowWriteVideo = NO;
+
 - (void)processAudioBuffer:(CMSampleBufferRef)audioBuffer;
 {
     if (!isRecording || _paused)
@@ -403,38 +407,64 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             CFRelease(audioBuffer);
             return;
         }
-        
-        if (discont) {
-			NSLog(@"processAudioBuffer: discont = NO");
-            discont = NO;
-            
-            CMTime current;
-            if (offsetTime.value > 0) {
-                current = CMTimeSubtract(currentSampleTime, offsetTime);
-            } else {
-                current = currentSampleTime;
-            }
-            
-            CMTime offset = CMTimeSubtract(current, previousAudioTime);
-            
-            if (offsetTime.value == 0) {
-                offsetTime = offset;
-            } else {
-                offsetTime = CMTimeAdd(offsetTime, offset);
-            }
-        }
 
-		if (offsetTime.value > 0) {
-			CFRelease(audioBuffer);
-			audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
-//            CFRetain(audioBuffer); // causes problem with no sound.
-        }
+		// Code taken from this project: http://www.gdcl.co.uk/2013/02/20/iPhone-Pause.html
+        if (discont)
+		{
+//			NSLog(@"Step 2 discont (audio); thread: %@", [NSThread currentThread]);
+
+			discont = NO;
+			// calc adjustment
+			CMTime pts = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+			CMTime last = previousAudioTime; // video: previousFrameTime
+			if (last.flags & kCMTimeFlags_Valid)
+			{
+				if (offsetTime.flags & kCMTimeFlags_Valid)
+				{
+					pts = CMTimeSubtract(pts, offsetTime);
+				}
+				CMTime offset = CMTimeSubtract(pts, last);
+//				NSLog(@"Setting offset from audio");
+//				NSLog(@"Adding %f to %f (pts %f)", ((double)offset.value)/offset.timescale, ((double)offsetTime.value)/offsetTime.timescale, ((double)pts.value/pts.timescale));
+				
+				// this stops us having to set a scale for _timeOffset before we see the first video time
+				if (offsetTime.value == 0)
+				{
+					offsetTime = offset;
+				}
+				else
+				{
+					offsetTime = CMTimeAdd(offsetTime, offset);
+				}
+			}
+			previousAudioTime.flags = 0;
+			previousFrameTime.flags = 0;
+			
+			allowWriteVideo = NO;
+		}
+
+        if (offsetTime.value > 0)
+		{
+            CFRelease(audioBuffer);
+            audioBuffer = [self adjustTime:audioBuffer by:offsetTime];
+//            CFRetain(audioBuffer); // TODO: The source of a silent crash (audio stops recording)
+		}
 		
-        // record most recent time so we know the length of the pause
-        currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
-
-        previousAudioTime = currentSampleTime;
-        
+		// record most recent time so we know the length of the pause
+		currentSampleTime = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+//		NSLog(@"currentSampleTime = %f; offsetTime = %f; %@", CMTimeGetSeconds(currentSampleTime), CMTimeGetSeconds(offsetTime), [NSThread currentThread]);
+		
+		// record most recent time so we know the length of the pause
+		CMTime pts = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
+		CMTime dur = CMSampleBufferGetDuration(audioBuffer);
+		if (dur.value > 0)
+		{
+			pts = CMTimeAdd(pts, dur);
+		}
+		previousAudioTime = pts;
+		
+//        previousAudioTime = currentSampleTime;
+		
         //if the consumer wants to do something with the audio samples before writing, let him.
         if (self.audioProcessingCallback) {
             //need to introspect into the opaque CMBlockBuffer structure to find its raw sample buffers.
@@ -483,6 +513,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 						}
 					}
 				}
+				allowWriteVideo = YES;
             }
             else
             {
@@ -497,7 +528,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
         };
 //        runAsynchronouslyOnContextQueue(_movieWriterContext, write);
         if( _encodingLiveVideo )
-
         {
             runAsynchronouslyOnContextQueue(_movieWriterContext, write);
         }
@@ -506,7 +536,8 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
             write();
         }
     }
-	else {
+	else
+	{
 		NSLog(@"No audio track");
 	}
 }
@@ -715,138 +746,132 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
 - (void)newFrameReadyAtTime:(CMTime)frameTime atIndex:(NSInteger)textureIndex;
 {
-    if (!isRecording || _paused)
-    {
-        [firstInputFramebuffer unlock];
-        return;
-    }
-
-    if (discont) {
-        discont = NO;
-        CMTime current;
-        
-        if (offsetTime.value > 0) {
-            current = CMTimeSubtract(frameTime, offsetTime);
-        } else {
-            current = frameTime;
-        }
-        
-        CMTime offset  = CMTimeSubtract(current, previousFrameTime);
-        
-        if (offsetTime.value == 0) {
-            offsetTime = offset;
-        } else {
-            offsetTime = CMTimeAdd(offsetTime, offset);
-        }
-    }
-	
-    if (offsetTime.value > 0) {
-        frameTime = CMTimeSubtract(frameTime, offsetTime);
-    }
-    
-    // Drop frames forced by images and other things with no time constants
-    // Also, if two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case
-    if ( (CMTIME_IS_INVALID(frameTime)) || (CMTIME_COMPARE_INLINE(frameTime, ==, previousFrameTime)) || (CMTIME_IS_INDEFINITE(frameTime)) ) 
-    {
-        [firstInputFramebuffer unlock];
-        return;
-    }
-
-    if (CMTIME_IS_INVALID(startTime))
-    {
-        runSynchronouslyOnContextQueue(_movieWriterContext, ^{
-            if ((videoInputReadyCallback == NULL) && (assetWriter.status != AVAssetWriterStatusWriting))
-            {
-                [assetWriter startWriting];
-            }
-            
-            [assetWriter startSessionAtSourceTime:frameTime];
-            startTime = frameTime;
-        });
-    }
-
-    GPUImageFramebuffer *inputFramebufferForBlock = firstInputFramebuffer;
-    glFinish();
-
-    runAsynchronouslyOnContextQueue(_movieWriterContext, ^{
-        if (!assetWriterVideoInput.readyForMoreMediaData && _encodingLiveVideo)
-        {
-            [inputFramebufferForBlock unlock];
-            NSLog(@"1: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-            return;
-        }
-        
-        // Render the frame with swizzled colors, so that they can be uploaded quickly as BGRA frames
-        [_movieWriterContext useAsCurrentContext];
-        [self renderAtInternalSizeUsingFramebuffer:inputFramebufferForBlock];
-        
-        CVPixelBufferRef pixel_buffer = NULL;
-        
-        if ([GPUImageContext supportsFastTextureUpload])
-        {
-            pixel_buffer = renderTarget;
-            CVPixelBufferLockBaseAddress(pixel_buffer, 0);
-        }
-        else
-        {
-            CVReturn status = CVPixelBufferPoolCreatePixelBuffer (NULL, [assetWriterPixelBufferInput pixelBufferPool], &pixel_buffer);
-            if ((pixel_buffer == NULL) || (status != kCVReturnSuccess))
-            {
-                CVPixelBufferRelease(pixel_buffer);
-                return;
-            }
-            else
-            {
-                CVPixelBufferLockBaseAddress(pixel_buffer, 0);
-                
-                GLubyte *pixelBufferData = (GLubyte *)CVPixelBufferGetBaseAddress(pixel_buffer);
-                glReadPixels(0, 0, videoSize.width, videoSize.height, GL_RGBA, GL_UNSIGNED_BYTE, pixelBufferData);
-            }
-        }
-        
-        void(^write)() = ^()
+	@synchronized(self)
+	{
+		if (!isRecording || _paused)
 		{
-            while( ! assetWriterVideoInput.readyForMoreMediaData && ! _encodingLiveVideo && ! videoEncodingIsFinished ) {
-                NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.1];
-                //            NSLog(@"video waiting...");
-                [[NSRunLoop currentRunLoop] runUntilDate:maxDate];
-            }
-            if (!assetWriterVideoInput.readyForMoreMediaData)
-            {
-				NSLog(@"2: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-            }
-            else if(self.assetWriter.status == AVAssetWriterStatusWriting)
-            {
-				if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime]) {
-					NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-					if (assetWriter.status == AVAssetWriterStatusFailed) {
-						isRecording = NO;
-						if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
-						{
-							[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+			[firstInputFramebuffer unlock];
+			return;
+		}
+
+		if (discont)
+		{
+			allowWriteVideo = NO;
+			return;
+		}
+		
+		if (offsetTime.value > 0)
+		{
+			frameTime = CMTimeSubtract(frameTime, offsetTime);
+		}
+		
+		// Drop frames forced by images and other things with no time constants
+		// Also, if two consecutive times with the same value are added to the movie, it aborts recording, so I bail on that case
+		if ( (CMTIME_IS_INVALID(frameTime)) || (CMTIME_COMPARE_INLINE(frameTime, ==, previousFrameTime)) || (CMTIME_IS_INDEFINITE(frameTime)) ) 
+		{
+			[firstInputFramebuffer unlock];
+			return;
+		}
+
+		if (CMTIME_IS_INVALID(startTime))
+		{
+			runSynchronouslyOnContextQueue(_movieWriterContext, ^{
+				if ((videoInputReadyCallback == NULL) && (assetWriter.status != AVAssetWriterStatusWriting))
+				{
+					[assetWriter startWriting];
+				}
+				
+				[assetWriter startSessionAtSourceTime:frameTime];
+				startTime = frameTime;
+			});
+		}
+
+		GPUImageFramebuffer *inputFramebufferForBlock = firstInputFramebuffer;
+		glFinish();
+
+		runAsynchronouslyOnContextQueue(_movieWriterContext, ^{
+			if (!assetWriterVideoInput.readyForMoreMediaData && _encodingLiveVideo)
+			{
+				[inputFramebufferForBlock unlock];
+				NSLog(@"1: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+				return;
+			}
+			
+			// Render the frame with swizzled colors, so that they can be uploaded quickly as BGRA frames
+			[_movieWriterContext useAsCurrentContext];
+			[self renderAtInternalSizeUsingFramebuffer:inputFramebufferForBlock];
+			
+			CVPixelBufferRef pixel_buffer = NULL;
+			
+			if ([GPUImageContext supportsFastTextureUpload])
+			{
+				pixel_buffer = renderTarget;
+				CVPixelBufferLockBaseAddress(pixel_buffer, 0);
+			}
+			else
+			{
+				CVReturn status = CVPixelBufferPoolCreatePixelBuffer (NULL, [assetWriterPixelBufferInput pixelBufferPool], &pixel_buffer);
+				if ((pixel_buffer == NULL) || (status != kCVReturnSuccess))
+				{
+					CVPixelBufferRelease(pixel_buffer);
+					return;
+				}
+				else
+				{
+					CVPixelBufferLockBaseAddress(pixel_buffer, 0);
+					
+					GLubyte *pixelBufferData = (GLubyte *)CVPixelBufferGetBaseAddress(pixel_buffer);
+					glReadPixels(0, 0, videoSize.width, videoSize.height, GL_RGBA, GL_UNSIGNED_BYTE, pixelBufferData);
+				}
+			}
+			
+			void(^write)() = ^()
+			{
+				while( ! assetWriterVideoInput.readyForMoreMediaData && ! _encodingLiveVideo && ! videoEncodingIsFinished ) {
+					NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.1];
+					//            NSLog(@"video waiting...");
+					[[NSRunLoop currentRunLoop] runUntilDate:maxDate];
+				}
+				if (!assetWriterVideoInput.readyForMoreMediaData)
+				{
+					NSLog(@"2: Had to drop a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+				}
+				else if(self.assetWriter.status == AVAssetWriterStatusWriting)
+				{
+					if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
+					{
+						NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+						NSLog(@"     thread: %@", [NSThread currentThread]);
+
+						if (assetWriter.status == AVAssetWriterStatusFailed) {
+							isRecording = NO;
+							if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
+							{
+								[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+							}
 						}
 					}
 				}
-            }
-            else
-            {
-                NSLog(@"Couldn't write a frame");
-                //NSLog(@"Wrote a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
-            }
-            CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
-            
-            previousFrameTime = frameTime;
-            
-            if (![GPUImageContext supportsFastTextureUpload])
-            {
-                CVPixelBufferRelease(pixel_buffer);
-            }
-        };
-        
-        write();
-        
-        [inputFramebufferForBlock unlock];
-    });
+				else
+				{
+					NSLog(@"Couldn't write a frame");
+					//NSLog(@"Wrote a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+				}
+				CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
+				
+				previousFrameTime = frameTime;
+
+				if (![GPUImageContext supportsFastTextureUpload])
+				{
+					CVPixelBufferRelease(pixel_buffer);
+				}
+			};
+			
+			write();
+			
+			[inputFramebufferForBlock unlock];
+		});
+	}
 }
 
 - (NSInteger)nextAvailableTextureIndex;
