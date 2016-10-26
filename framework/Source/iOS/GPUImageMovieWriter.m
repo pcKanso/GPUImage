@@ -202,9 +202,9 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     // custom output settings specified
     else 
     {
-		NSString *videoCodec = [outputSettings objectForKey:AVVideoCodecKey];
-		NSNumber *width = [outputSettings objectForKey:AVVideoWidthKey];
-		NSNumber *height = [outputSettings objectForKey:AVVideoHeightKey];
+		__unused NSString *videoCodec = [outputSettings objectForKey:AVVideoCodecKey];
+		__unused NSNumber *width = [outputSettings objectForKey:AVVideoWidthKey];
+		__unused NSNumber *height = [outputSettings objectForKey:AVVideoHeightKey];
 		
 		NSAssert(videoCodec && width && height, @"OutputSettings is missing required parameters.");
         
@@ -486,7 +486,7 @@ static BOOL allowWriteVideo = NO;
                 SInt16 *samples = (SInt16 *)audioBufferList.mBuffers[bufferCount].mData;
                 self.audioProcessingCallback(&samples, numSamplesInBuffer);
             }
-			CFRelease(buffer);
+			CFRelease(buffer); // Fixed leak caused from not releasing block buffer #2347
         }
         
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
@@ -656,7 +656,7 @@ static BOOL allowWriteVideo = NO;
     }
     
 	
-	GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+	__unused GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
     
     NSAssert(status == GL_FRAMEBUFFER_COMPLETE, @"Incomplete filter FBO: %d", status);
 }
@@ -745,7 +745,6 @@ static BOOL allowWriteVideo = NO;
 {
 	@synchronized(self)
 	{
-
 		if (!isRecording || _paused)
 		{
 			[firstInputFramebuffer unlock];
@@ -800,6 +799,7 @@ static BOOL allowWriteVideo = NO;
 			[self renderAtInternalSizeUsingFramebuffer:inputFramebufferForBlock];
 			
 			CVPixelBufferRef pixel_buffer = NULL;
+			
 			if ([GPUImageContext supportsFastTextureUpload])
 			{
 				pixel_buffer = renderTarget;
@@ -837,7 +837,7 @@ static BOOL allowWriteVideo = NO;
 				{
 					if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
 					{
-						NSLog(@">>>> Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+						NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
 						NSLog(@"     thread: %@", [NSThread currentThread]);
 
 						if (assetWriter.status == AVAssetWriterStatusFailed) {
@@ -1049,21 +1049,22 @@ static BOOL allowWriteVideo = NO;
     }
 }
 
-- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef) sample by:(CMTime) offset {
-    CMItemCount count;
+- (CMSampleBufferRef)adjustTime:(CMSampleBufferRef)sample by:(CMTime)offset
+{
+	CMItemCount count;
     CMSampleBufferGetSampleTimingInfoArray(sample, 0, nil, &count);
     CMSampleTimingInfo* pInfo = malloc(sizeof(CMSampleTimingInfo) * count);
     CMSampleBufferGetSampleTimingInfoArray(sample, count, pInfo, &count);
-    
-    for (CMItemCount i = 0; i < count; i++) {
-        pInfo[i].decodeTimeStamp = CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
-        pInfo[i].presentationTimeStamp = CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
-    }
-    
-    CMSampleBufferRef sout;
-    CMSampleBufferCreateCopyWithNewTiming(nil, sample, count, pInfo, &sout);
+	
+	for (CMItemCount i = 0; i < count; i++) {
+		pInfo[i].decodeTimeStamp = CMTimeSubtract(pInfo[i].decodeTimeStamp, offset);
+		pInfo[i].presentationTimeStamp = CMTimeSubtract(pInfo[i].presentationTimeStamp, offset);
+	}
+
+	CMSampleBufferRef sout;
+    CMSampleBufferCreateCopyWithNewTiming(kCFAllocatorDefault, sample, count, pInfo, &sout);
     free(pInfo);
-    
+	
     return sout;
 }
 
