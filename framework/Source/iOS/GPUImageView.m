@@ -229,6 +229,8 @@
 
 - (void)recalculateViewGeometry;
 {
+    dispatch_async(dispatch_get_main_queue(), ^{ // Correct
+        
     runSynchronouslyOnVideoProcessingQueue(^{
         CGFloat heightScaling, widthScaling;
         
@@ -275,6 +277,8 @@
 //        -1.0f,  1.0f,
 //        1.0f,  1.0f,
 //    };
+    });
+
 }
 
 - (void)setBackgroundColorRed:(GLfloat)redComponent green:(GLfloat)greenComponent blue:(GLfloat)blueComponent alpha:(GLfloat)alphaComponent;

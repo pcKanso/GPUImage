@@ -488,7 +488,7 @@ static BOOL allowWriteVideo = NO;
         }
         
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
-        void(^write)() = ^() {
+        void(^write)(void) = ^() {
             while( ! assetWriterAudioInput.readyForMoreMediaData && ! _encodingLiveVideo && ! audioEncodingIsFinished ) {
                 NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.5];
                 //NSLog(@"audio waiting...");
@@ -824,7 +824,7 @@ static BOOL allowWriteVideo = NO;
 				}
 			}
 			
-			void(^write)() = ^()
+            void(^write)(void) = ^()
 			{
 				while( ! assetWriterVideoInput.readyForMoreMediaData && ! _encodingLiveVideo && ! videoEncodingIsFinished ) {
 					NSDate *maxDate = [NSDate dateWithTimeIntervalSinceNow:0.1];
@@ -838,7 +838,7 @@ static BOOL allowWriteVideo = NO;
 				else if(self.assetWriter.status == AVAssetWriterStatusWriting)
 				{
 					// try checking to see if the frameTime rounds to zero??
-					NSLog(@"Video frame time: %lld, %d, %lld", frameTime.value, frameTime.timescale, frameTime.epoch);
+//                    NSLog(@"Video frame time: %lld, %d, %lld", frameTime.value, frameTime.timescale, frameTime.epoch);
 					if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
 					{
 						NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
