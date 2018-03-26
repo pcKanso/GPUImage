@@ -411,8 +411,6 @@ static BOOL allowWriteVideo = NO;
 		// Code taken from this project: http://www.gdcl.co.uk/2013/02/20/iPhone-Pause.html
         if (discont)
 		{
-//			NSLog(@"Step 2 discont (audio); thread: %@", [NSThread currentThread]);
-
 			discont = NO;
 			// calc adjustment
 			CMTime pts = CMSampleBufferGetPresentationTimeStamp(audioBuffer);
@@ -517,7 +515,12 @@ static BOOL allowWriteVideo = NO;
             }
             else
             {
-                //NSLog(@"Wrote an audio frame %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, currentSampleTime)));
+				NSLog(@"Couldn't write an audio frame %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, currentSampleTime)));
+				isRecording = NO;
+				if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
+				{
+					[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+				}
             }
 
             if (_shouldInvalidateAudioSampleWhenDone)
@@ -528,7 +531,6 @@ static BOOL allowWriteVideo = NO;
         };
 //        runAsynchronouslyOnContextQueue(_movieWriterContext, write);
         if( _encodingLiveVideo )
-
         {
             runAsynchronouslyOnContextQueue(_movieWriterContext, write);
         }
@@ -835,11 +837,15 @@ static BOOL allowWriteVideo = NO;
 				}
 				else if(self.assetWriter.status == AVAssetWriterStatusWriting)
 				{
+					// try checking to see if the frameTime rounds to zero??
+					NSLog(@"Video frame time: %lld, %d, %lld", frameTime.value, frameTime.timescale, frameTime.epoch);
 					if (![assetWriterPixelBufferInput appendPixelBuffer:pixel_buffer withPresentationTime:frameTime])
 					{
 						NSLog(@"Problem appending pixel buffer at time: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+						NSLog(@"Problem appending pixel buffer at previousFrameTime: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, previousFrameTime)));
 						NSLog(@"     thread: %@", [NSThread currentThread]);
 
+						NSLog(@"error is: %@", assetWriter.error.description);
 						if (assetWriter.status == AVAssetWriterStatusFailed) {
 							isRecording = NO;
 							if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
@@ -857,7 +863,18 @@ static BOOL allowWriteVideo = NO;
 				else
 				{
 					NSLog(@"Couldn't write a frame");
-					//NSLog(@"Wrote a video frame: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+					NSLog(@"self.assetWriter.status %ld", (long)self.assetWriter.status);
+					NSLog(@"at frameTime        : %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, frameTime)));
+					NSLog(@"at previousframetime: %@", CFBridgingRelease(CMTimeCopyDescription(kCFAllocatorDefault, previousFrameTime)));
+					NSLog(@"pixel_buffer attrs:   %@", pixel_buffer);
+					if (assetWriter.status == AVAssetWriterStatusFailed) {
+						NSLog(@"error is: %@", assetWriter.error.description);
+						isRecording = NO;
+						if(self.delegate && [self.delegate respondsToSelector:@selector(movieRecordingFailedWithError:)])
+						{
+							[self.delegate movieRecordingFailedWithError:self.assetWriter.error];
+						}
+					}
 				}
 				CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
 				
