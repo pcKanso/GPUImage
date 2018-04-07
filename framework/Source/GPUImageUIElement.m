@@ -108,15 +108,15 @@
     free(imageData);
 	
 	runAsynchronouslyOnVideoProcessingQueue(^{
-		for (id<GPUImageInput> currentTarget in targets)
+		for (id<GPUImageInput> currentTarget in self->targets)
 		{
 			if (currentTarget != self.targetToIgnoreForUpdates)
 			{
-				NSInteger indexOfObject = [targets indexOfObject:currentTarget];
-				NSInteger textureIndexOfTarget = [[targetTextureIndices objectAtIndex:indexOfObject] integerValue];
+				NSInteger indexOfObject = [self->targets indexOfObject:currentTarget];
+				NSInteger textureIndexOfTarget = [[self->targetTextureIndices objectAtIndex:indexOfObject] integerValue];
 				
 				[currentTarget setInputSize:layerPixelSize atIndex:textureIndexOfTarget];
-				[currentTarget setInputFramebuffer:outputFramebuffer atIndex:textureIndexOfTarget];
+				[currentTarget setInputFramebuffer:self->outputFramebuffer atIndex:textureIndexOfTarget];
 				[currentTarget newFrameReadyAtTime:frameTime atIndex:textureIndexOfTarget];
 			}
 		}
