@@ -51,6 +51,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
 @implementation GPUImageMovieWriter
 
+@synthesize muteRecordedAudio;
 @synthesize hasAudioTrack = _hasAudioTrack;
 @synthesize encodingLiveVideo = _encodingLiveVideo;
 @synthesize shouldPassthroughAudio = _shouldPassthroughAudio;
@@ -87,6 +88,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     videoEncodingIsFinished = NO;
     audioEncodingIsFinished = NO;
 
+    muteRecordedAudio = NO;
     discont = NO;
     videoSize = newSize;
     movieURL = newMovieURL;
@@ -279,7 +281,6 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     });
     isRecording = YES;
 	//    [assetWriter startSessionAtSourceTime:kCMTimeZero];
-	allowWriteVideo = NO;
 }
 
 - (void)startRecordingInOrientation:(CGAffineTransform)orientationTransform;
@@ -368,8 +369,22 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
     });
 }
 
-// Attempt at fix for crashing
-static BOOL allowWriteVideo = NO;
+- (void)muteAudioInBuffer:(CMSampleBufferRef)sampleBuffer
+{
+    CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
+    NSUInteger channelIndex = 0;
+    
+    CMBlockBufferRef audioBlockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
+    size_t audioBlockBufferOffset = (channelIndex * numSamples * sizeof(SInt16));
+    size_t lengthAtOffset = 0;
+    size_t totalLength = 0;
+    SInt16 *samples = NULL;
+    CMBlockBufferGetDataPointer(audioBlockBuffer, audioBlockBufferOffset, &lengthAtOffset, &totalLength, (char **)(&samples));
+    
+    for (NSInteger i=0; i<numSamples; i++) {
+        samples[i] = (SInt16)0;
+    }
+}
 
 - (void)processAudioBuffer:(CMSampleBufferRef)audioBuffer;
 {
@@ -437,8 +452,6 @@ static BOOL allowWriteVideo = NO;
 			}
 			previousAudioTime.flags = 0;
 			previousFrameTime.flags = 0;
-			
-			allowWriteVideo = NO;
 		}
 
         if (offsetTime.value > 0)
@@ -487,6 +500,10 @@ static BOOL allowWriteVideo = NO;
 			CFRelease(buffer); // Fixed leak caused from not releasing block buffer #2347
         }
         
+        if (muteRecordedAudio) {
+            NSLog(@"Recorded audio muted at sample time: %lld", currentSampleTime.value);
+            [self muteAudioInBuffer:audioBuffer];
+        }
 //        NSLog(@"Recorded audio sample time: %lld, %d, %lld", currentSampleTime.value, currentSampleTime.timescale, currentSampleTime.epoch);
         void(^write)(void) = ^() {
             while( ! self->assetWriterAudioInput.readyForMoreMediaData && ! self->_encodingLiveVideo && ! self->audioEncodingIsFinished ) {
@@ -511,7 +528,6 @@ static BOOL allowWriteVideo = NO;
 						}
 					}
 				}
-				allowWriteVideo = YES;
             }
             else
             {
@@ -755,7 +771,6 @@ static BOOL allowWriteVideo = NO;
 
 		if (discont)
 		{
-			allowWriteVideo = NO;
 			return;
 		}
 		
