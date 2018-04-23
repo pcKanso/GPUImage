@@ -371,6 +371,7 @@ NSString *const kGPUImageColorSwizzlingFragmentShaderString = SHADER_STRING
 
 - (void)muteAudioInBuffer:(CMSampleBufferRef)sampleBuffer
 {
+    // https://stackoverflow.com/questions/11759076/mute-audio-avassetwriterinput-while-recording
     CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
     NSUInteger channelIndex = 0;
     
